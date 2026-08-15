@@ -34,12 +34,13 @@ const viewListBtn = document.getElementById('view-list-btn');
 const statusDiv = document.getElementById('status');
 const manualForm = document.getElementById('manual-isbn-form');
 const manualInput = document.getElementById('manual-isbn-input');
+const exportBtn = document.getElementById('export-btn');
+const importFile = document.getElementById('import-file');
 
 // Process & Add ISBN
 function processISBN(rawIsbn) {
   if (isProcessing) return;
 
-  // Clean non-numeric characters (except 'X' for ISBN-10)
   const cleanIsbn = rawIsbn.replace(/[^0-9X]/gi, '').toUpperCase();
 
   if (cleanIsbn.length !== 10 && cleanIsbn.length !== 13) {
@@ -47,7 +48,6 @@ function processISBN(rawIsbn) {
     return;
   }
 
-  // Check for duplicates
   if (library.some(book => book.isbn === cleanIsbn)) {
     statusDiv.innerText = `Book (ISBN: ${cleanIsbn}) is already in your library!`;
     return;
@@ -70,7 +70,7 @@ const html5QrcodeScanner = new Html5QrcodeScanner(
     fps: 10, 
     qrbox: { width: 250, height: 150 }, 
     formatsToSupport: [ Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8 ],
-    videoConstraints: { facingMode: "environment" } // Forces back camera on phones
+    videoConstraints: { facingMode: "environment" }
   },
   /* verbose= */ false
 );
@@ -130,6 +130,97 @@ async function fetchBookDetails(isbn) {
   }
 }
 
+// CSV Export Logic
+exportBtn.addEventListener('click', () => {
+  if (library.length === 0) {
+    statusDiv.innerText = "Library is empty, nothing to export!";
+    return;
+  }
+
+  let csvContent = "data:text/csv;charset=utf-8,ID,ISBN,Title,Author,Cover,AddedAt\r\n";
+  
+  library.forEach(book => {
+    // Wrap fields in quotes to safely manage commas inside titles/authors
+    const cleanTitle = `"${(book.title || "").replace(/"/g, '""')}"`;
+    const cleanAuthor = `"${(book.author || "").replace(/"/g, '""')}"`;
+    const row = [book.id, book.isbn, cleanTitle, cleanAuthor, book.cover, book.addedAt].join(",");
+    csvContent += row + "\r\n";
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `my_library_backup_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  statusDiv.innerText = "Library exported successfully as CSV!";
+});
+
+// CSV Import Logic
+importFile.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    try {
+      const text = event.target.result;
+      const lines = text.split("\r\n").length > 1 ? text.split("\r\n") : text.split("\n");
+      
+      let importedCount = 0;
+      
+      // Skip header row (start at i = 1)
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Simple CSV cell splitter parsing commas and double quotes
+        const row = [];
+        let inQuotes = false;
+        let currentField = '';
+        
+        for (let char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            row.push(currentField);
+            currentField = '';
+          } else {
+            currentField += char;
+          }
+        }
+        row.push(currentField);
+
+        if (row.length >= 4) {
+          const id = Number(row[0]) || Date.now();
+          const isbn = row[1];
+          const title = row[2] ? row[2].replace(/^"|"$/g, '').replace(/""/g, '"') : "Unknown Title";
+          const author = row[3] ? row[3].replace(/^"|"$/g, '').replace(/""/g, '"') : "Unknown Author";
+          const cover = row[4] || "https://via.placeholder.com/120x170?text=No+Cover";
+          const addedAt = Number(row[5]) || new Date().getTime();
+
+          // Avoid duplicates based on ISBN
+          if (isbn && !library.some(b => b.isbn === isbn)) {
+            library.push({ id, isbn, title, author, cover, addedAt });
+            importedCount++;
+          }
+        }
+      }
+
+      saveAndRender();
+      statusDiv.innerText = `Successfully imported ${importedCount} books from CSV backup!`;
+    } catch (err) {
+      console.error(err);
+      statusDiv.innerText = "Error parsing CSV file. Please make sure it's a valid backup.";
+    } finally {
+      importFile.value = ''; // Reset file input
+    }
+  };
+  reader.readAsText(file);
+});
+
 // Storage & Rendering
 function saveAndRender() {
   localStorage.setItem('my_library', JSON.stringify(library));
@@ -164,7 +255,7 @@ function renderLibrary() {
   const sortedBooks = getSortedBooks();
 
   if (sortedBooks.length === 0) {
-    libraryContainer.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #888;">No books added yet. Scan a barcode or enter an ISBN above!</p>';
+    libraryContainer.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #888;">No books added yet. Scan a barcode, enter an ISBN, or import a backup!</p>';
     return;
   }
 
