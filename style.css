@@ -5,6 +5,7 @@
   --primary-color: #4a90e2;
   --danger-color: #e74c3c;
   --border-color: #e0e0e0;
+  --success-color: #27ae60;
 }
 
 /* Dark Mode Variables */
@@ -14,6 +15,7 @@
   --text-color: #e0e0e0;
   --primary-color: #3a7bc8;
   --border-color: #333333;
+  --success-color: #219653;
 }
 
 body {
@@ -46,9 +48,9 @@ header {
   border: 1px solid var(--border-color);
   padding: 8px 12px;
   border-radius: 20px;
+  cursor: pointer;
 }
 
-/* Stack header nicely on smaller screens */
 @media (max-width: 600px) {
   .theme-btn {
     position: static;
@@ -63,7 +65,7 @@ header {
   padding: 20px;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  margin-bottom: 25px;
+  margin-bottom: 20px;
   text-align: center;
   transition: background-color 0.3s;
 }
@@ -76,7 +78,6 @@ header {
   border: 1px solid var(--border-color) !important;
 }
 
-/* Force scanner UI text to match theme */
 #reader * {
   color: var(--text-color) !important;
 }
@@ -108,6 +109,36 @@ header {
   width: 200px;
   background-color: var(--bg-color);
   color: var(--text-color);
+}
+
+/* Backup Section Styling */
+.backup-section {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.backup-btn {
+  background-color: var(--success-color);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.import-label {
+  background-color: #2980b9;
+}
+
+.backup-btn:hover {
+  opacity: 0.9;
 }
 
 .controls {
