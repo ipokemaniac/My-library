@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal Library Tracker</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- HTML5 QR Code Scanner Library -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <h1>📚 My Library Tracker</h1>
+      <button id="theme-toggle" class="theme-btn">🌙 Dark Mode</button>
+    </header>
+
+    <div class="scanner-section">
+      <div id="reader"></div>
+      
+      <!-- Manual ISBN Entry Form -->
+      <form class="manual-input-section" id="manual-isbn-form">
+        <input 
+          type="text" 
+          id="manual-isbn-input" 
+          placeholder="Enter ISBN (e.g. 9780140449136)" 
+          required
+        />
+        <button type="submit">Add Book</button>
+      </form>
+
+      <div id="status">Scanner ready...</div>
+    </div>
+
+    <div class="controls">
+      <div class="control-group">
+        <label for="sort-select">Sort by:</label>
+        <select id="sort-select">
+          <option value="last-added">Last Added</option>
+          <option value="first-added">First Added</option>
+          <option value="a-z">Title (A - Z)</option>
+          <option value="z-a">Title (Z - A)</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <button id="view-grid-btn" class="view-btn active">Grid View</button>
+        <button id="view-list-btn" class="view-btn">List View</button>
+      </div>
+    </div>
+
+    <div id="library" class="library-container grid"></div>
+  </div>
+
+  <!-- Links to your custom logic -->
+  <script src="script.js"></script>
+</body>
+</html>
