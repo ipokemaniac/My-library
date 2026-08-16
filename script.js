@@ -86,42 +86,95 @@ manualForm.addEventListener('submit', (e) => {
   }
 });
 
-// Fetch Book Metadata from Open Library API
+// Enhanced Fetch Book Metadata with Fallbacks
 async function fetchBookDetails(isbn) {
+  let title = null;
+  let author = null;
+  let cover = "https://via.placeholder.com/120x170?text=No+Cover";
+
   try {
+    // Attempt 1: Standard Books API Endpoint
     const response = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
     const data = await response.json();
     const bookKey = `ISBN:${isbn}`;
 
     if (data[bookKey]) {
       const bookData = data[bookKey];
-      const newBook = {
-        id: Date.now(),
-        isbn: isbn,
-        title: bookData.title || "Unknown Title",
-        author: bookData.authors ? bookData.authors.map(a => a.name).join(", ") : "Unknown Author",
-        cover: bookData.cover ? bookData.cover.medium : "https://via.placeholder.com/120x170?text=No+Cover",
-        addedAt: new Date().getTime()
-      };
-
-      library.push(newBook);
-      saveAndRender();
-      statusDiv.innerText = `Successfully added "${newBook.title}"!`;
-    } else {
-      statusDiv.innerText = `Book info not found for ISBN ${isbn}, but saved entry.`;
-      library.push({
-        id: Date.now(),
-        isbn: isbn,
-        title: `Unknown Book (${isbn})`,
-        author: "Unknown",
-        cover: "https://via.placeholder.com/120x170?text=No+Cover",
-        addedAt: new Date().getTime()
-      });
-      saveAndRender();
+      title = bookData.title || null;
+      author = bookData.authors ? bookData.authors.map(a => a.name).join(", ") : null;
+      if (bookData.cover && bookData.cover.medium) {
+        cover = bookData.cover.medium;
+      }
     }
+
+    // Attempt 2: Fallback to ISBN Endpoint if metadata is missing or empty
+    if (!title) {
+      const altResponse = await fetch(`https://openlibrary.org/isbn/${isbn}.json`);
+      if (altResponse.ok) {
+        const altData = await altResponse.json();
+        title = altData.title || null;
+
+        // Fetch author names if author keys are provided
+        if (altData.authors && altData.authors.length > 0) {
+          const authorNames = [];
+          for (let authObj of altData.authors) {
+            try {
+              const authorRes = await fetch(`https://openlibrary.org${authObj.key}.json`);
+              if (authorRes.ok) {
+                const authorData = await authorRes.json();
+                if (authorData.name) authorNames.push(authorData.name);
+              }
+            } catch (err) {
+              // Ignore individual author fetch failures
+            }
+          }
+          if (authorNames.length > 0) {
+            author = authorNames.join(", ");
+          }
+        }
+      }
+    }
+
+    // Attempt 3: Fallback via Covers API image validation
+    if (cover.includes("No+Cover")) {
+      cover = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
+    }
+
+    // Final Validation and Insertion
+    const finalTitle = title || `Unknown Book (${isbn})`;
+    const finalAuthor = author || "Unknown Author";
+
+    const newBook = {
+      id: Date.now(),
+      isbn: isbn,
+      title: finalTitle,
+      author: finalAuthor,
+      cover: cover,
+      addedAt: new Date().getTime()
+    };
+
+    library.push(newBook);
+    saveAndRender();
+    
+    if (!title) {
+      statusDiv.innerText = `Saved ISBN ${isbn}, but details were sparse on Open Library.`;
+    } else {
+      statusDiv.innerText = `Successfully added "${finalTitle}"!`;
+    }
+
   } catch (err) {
     console.error(err);
-    statusDiv.innerText = "Error fetching book data. Check your network connection.";
+    // Fallback save so user doesn't lose the scan on network exceptions
+    library.push({
+      id: Date.now(),
+      isbn: isbn,
+      title: `Unknown Book (${isbn})`,
+      author: "Unknown Author",
+      cover: `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
+      addedAt: new Date().getTime()
+    });
+    saveAndRender();
+    statusDiv.innerText = "Error fetching book data. Entry saved with fallback settings.";
   } finally {
     setTimeout(() => {
       isProcessing = false;
@@ -140,7 +193,6 @@ exportBtn.addEventListener('click', () => {
   let csvContent = "data:text/csv;charset=utf-8,ID,ISBN,Title,Author,Cover,AddedAt\r\n";
   
   library.forEach(book => {
-    // Wrap fields in quotes to safely manage commas inside titles/authors
     const cleanTitle = `"${(book.title || "").replace(/"/g, '""')}"`;
     const cleanAuthor = `"${(book.author || "").replace(/"/g, '""')}"`;
     const row = [book.id, book.isbn, cleanTitle, cleanAuthor, book.cover, book.addedAt].join(",");
@@ -171,12 +223,10 @@ importFile.addEventListener('change', (e) => {
       
       let importedCount = 0;
       
-      // Skip header row (start at i = 1)
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
 
-        // Simple CSV cell splitter parsing commas and double quotes
         const row = [];
         let inQuotes = false;
         let currentField = '';
@@ -201,7 +251,6 @@ importFile.addEventListener('change', (e) => {
           const cover = row[4] || "https://via.placeholder.com/120x170?text=No+Cover";
           const addedAt = Number(row[5]) || new Date().getTime();
 
-          // Avoid duplicates based on ISBN
           if (isbn && !library.some(b => b.isbn === isbn)) {
             library.push({ id, isbn, title, author, cover, addedAt });
             importedCount++;
@@ -215,7 +264,7 @@ importFile.addEventListener('change', (e) => {
       console.error(err);
       statusDiv.innerText = "Error parsing CSV file. Please make sure it's a valid backup.";
     } finally {
-      importFile.value = ''; // Reset file input
+      importFile.value = '';
     }
   };
   reader.readAsText(file);
