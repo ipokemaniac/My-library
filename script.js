@@ -86,7 +86,7 @@ manualForm.addEventListener('submit', (e) => {
   }
 });
 
-// Fetch Book Metadata: Prioritizing Google Books with Open Library Fallback
+// Fetch Book Details: Google Books API (Primary) -> Open Library Search API (Fallback)
 async function fetchBookDetails(isbn) {
   let title = null;
   let author = null;
@@ -107,18 +107,19 @@ async function fetchBookDetails(isbn) {
       }
     }
 
-    // --- ATTEMPT 2: Open Library API (Fallback if Google fails) ---
+    // --- ATTEMPT 2: Open Library Search API (Fallback if Google fails) ---
     if (!title) {
-      const olRes = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
-      const olData = await olRes.json();
-      const bookKey = `ISBN:${isbn}`;
+      const olSearchRes = await fetch(`https://openlibrary.org/search.json?isbn=${isbn}`);
+      const olSearchData = await olSearchRes.json();
 
-      if (olData[bookKey]) {
-        const bookData = olData[bookKey];
-        title = bookData.title || null;
-        author = bookData.authors ? bookData.authors.map(a => a.name).join(", ") : null;
-        if (bookData.cover && bookData.cover.medium) {
-          cover = bookData.cover.medium;
+      if (olSearchData.docs && olSearchData.docs.length > 0) {
+        const doc = olSearchData.docs[0];
+        title = doc.title || null;
+        author = doc.author_name ? doc.author_name.join(", ") : null;
+        
+        // If Open Library has a cover ID, build the optimal cover URL
+        if (doc.cover_i) {
+          cover = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
         }
       }
     }
