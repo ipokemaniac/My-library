@@ -86,46 +86,75 @@ manualForm.addEventListener('submit', (e) => {
   }
 });
 
-// Fetch Book Details: Google Books API (Primary) -> Open Library Search API (Fallback)
+// Robust Multi-Tier Fetch Book Metadata Strategy
 async function fetchBookDetails(isbn) {
   let title = null;
   let author = null;
-  let cover = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`; // Default cover fallback
+  let cover = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
 
   try {
-    // --- ATTEMPT 1: Google Books API (Primary Priority) ---
-    const googleRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
-    const googleData = await googleRes.json();
+    // --- TIER 1: Google Books API ---
+    try {
+      const googleRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
+      const googleData = await googleRes.json();
 
-    if (googleData.items && googleData.items.length > 0) {
-      const volumeInfo = googleData.items[0].volumeInfo;
-      title = volumeInfo.title || null;
-      author = volumeInfo.authors ? volumeInfo.authors.join(", ") : null;
-      
-      if (volumeInfo.imageLinks && volumeInfo.imageLinks.thumbnail) {
-        cover = volumeInfo.imageLinks.thumbnail.replace('http://', 'https://').replace('&edge=curl', '');
-      }
-    }
-
-    // --- ATTEMPT 2: Open Library Search API (Fallback if Google fails) ---
-    if (!title) {
-      const olSearchRes = await fetch(`https://openlibrary.org/search.json?isbn=${isbn}`);
-      const olSearchData = await olSearchRes.json();
-
-      if (olSearchData.docs && olSearchData.docs.length > 0) {
-        const doc = olSearchData.docs[0];
-        title = doc.title || null;
-        author = doc.author_name ? doc.author_name.join(", ") : null;
+      if (googleData.items && googleData.items.length > 0) {
+        const volumeInfo = googleData.items[0].volumeInfo;
+        title = volumeInfo.title || null;
+        author = volumeInfo.authors ? volumeInfo.authors.join(", ") : null;
         
-        // If Open Library has a cover ID, build the optimal cover URL
-        if (doc.cover_i) {
-          cover = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
+        if (volumeInfo.imageLinks && volumeInfo.imageLinks.thumbnail) {
+          cover = volumeInfo.imageLinks.thumbnail.replace('http://', 'https://').replace('&edge=curl', '');
         }
       }
+    } catch (e) {
+      console.warn("Google Books API tier failed, moving to fallback...", e);
     }
 
-    const finalTitle = title || `Unknown Book (${isbn})`;
-    const finalAuthor = author || "Unknown Author";
+    // --- TIER 2: Open Library Search API ---
+    if (!title) {
+      try {
+        const olSearchRes = await fetch(`https://openlibrary.org/search.json?isbn=${isbn}`);
+        const olSearchData = await olSearchRes.json();
+
+        if (olSearchData.docs && olSearchData.docs.length > 0) {
+          const doc = olSearchData.docs[0];
+          title = doc.title || null;
+          author = doc.author_name ? doc.author_name.join(", ") : null;
+          
+          if (doc.cover_i) {
+            cover = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
+          }
+        }
+      } catch (e) {
+        console.warn("Open Library Search API tier failed, moving to fallback...", e);
+      }
+    }
+
+    // --- TIER 3: Open Library Books API ---
+    if (!title) {
+      try {
+        const olRes = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
+        const olData = await olRes.json();
+        const bookKey = `ISBN:${isbn}`;
+
+        if (olData[bookKey]) {
+          const bookData = olData[bookKey];
+          title = bookData.title || null;
+          author = bookData.authors ? bookData.authors.map(a => a.name).join(", ") : null;
+          if (bookData.cover && bookData.cover.medium) {
+            cover = bookData.cover.medium;
+          }
+        }
+      } catch (e) {
+        console.warn("Open Library Books API tier failed...", e);
+      }
+    }
+
+    // --- TIER 4: Ultimate Universal Fail-Safe ---
+    // If all APIs miss a brand-new release, format it cleanly instead of throwing errors
+    const finalTitle = title || `New Release (${isbn})`;
+    const finalAuthor = author || "Unlisted Author / Click Edit";
 
     const newBook = {
       id: Date.now(),
@@ -140,28 +169,28 @@ async function fetchBookDetails(isbn) {
     saveAndRender();
     
     if (!title) {
-      statusDiv.innerText = `Added ISBN ${isbn} as Unknown. Click 'Edit' on the book card to rename it!`;
+      statusDiv.innerText = `Added new ISBN ${isbn}! (API pending index). Click 'Edit' to add title/author.`;
     } else {
       statusDiv.innerText = `Successfully added "${finalTitle}"!`;
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("Critical parsing error:", err);
     library.push({
       id: Date.now(),
       isbn: isbn,
-      title: `Unknown Book (${isbn})`,
-      author: "Unknown Author",
+      title: `New Release (${isbn})`,
+      author: "Unlisted Author",
       cover: cover,
       addedAt: new Date().getTime()
     });
     saveAndRender();
-    statusDiv.innerText = "Error fetching book data. Saved as unknown (use Edit to update).";
+    statusDiv.innerText = "Added to library. Click 'Edit' on the card to update details.";
   } finally {
     setTimeout(() => {
       isProcessing = false;
       statusDiv.innerText = "Ready to scan or enter next book...";
-    }, 2000);
+    }, 2500);
   }
 }
 
@@ -171,10 +200,10 @@ function editBook(id) {
   if (!book) return;
 
   const newTitle = prompt("Enter correct book title:", book.title);
-  if (newTitle === null) return; // Cancelled
+  if (newTitle === null) return;
 
   const newAuthor = prompt("Enter correct author name:", book.author);
-  if (newAuthor === null) return; // Cancelled
+  if (newAuthor === null) return;
 
   book.title = newTitle.trim() || book.title;
   book.author = newAuthor.trim() || book.author;
