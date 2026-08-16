@@ -86,61 +86,27 @@ manualForm.addEventListener('submit', (e) => {
   }
 });
 
-// Enhanced Fetch Book Metadata with Fallbacks
+// Fetch Book Metadata using Google Books API
 async function fetchBookDetails(isbn) {
   let title = null;
   let author = null;
-  let cover = "https://via.placeholder.com/120x170?text=No+Cover";
+  let cover = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`; // Fallback cover source
 
   try {
-    // Attempt 1: Standard Books API Endpoint
-    const response = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
+    const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
     const data = await response.json();
-    const bookKey = `ISBN:${isbn}`;
 
-    if (data[bookKey]) {
-      const bookData = data[bookKey];
-      title = bookData.title || null;
-      author = bookData.authors ? bookData.authors.map(a => a.name).join(", ") : null;
-      if (bookData.cover && bookData.cover.medium) {
-        cover = bookData.cover.medium;
+    if (data.items && data.items.length > 0) {
+      const volumeInfo = data.items[0].volumeInfo;
+      title = volumeInfo.title || null;
+      author = volumeInfo.authors ? volumeInfo.authors.join(", ") : null;
+      
+      if (volumeInfo.imageLinks && volumeInfo.imageLinks.thumbnail) {
+        // Upgrade Google thumbnail to secure HTTPS and remove curl borders if present
+        cover = volumeInfo.imageLinks.thumbnail.replace('http://', 'https://').replace('&edge=curl', '');
       }
     }
 
-    // Attempt 2: Fallback to ISBN Endpoint if metadata is missing or empty
-    if (!title) {
-      const altResponse = await fetch(`https://openlibrary.org/isbn/${isbn}.json`);
-      if (altResponse.ok) {
-        const altData = await altResponse.json();
-        title = altData.title || null;
-
-        // Fetch author names if author keys are provided
-        if (altData.authors && altData.authors.length > 0) {
-          const authorNames = [];
-          for (let authObj of altData.authors) {
-            try {
-              const authorRes = await fetch(`https://openlibrary.org${authObj.key}.json`);
-              if (authorRes.ok) {
-                const authorData = await authorRes.json();
-                if (authorData.name) authorNames.push(authorData.name);
-              }
-            } catch (err) {
-              // Ignore individual author fetch failures
-            }
-          }
-          if (authorNames.length > 0) {
-            author = authorNames.join(", ");
-          }
-        }
-      }
-    }
-
-    // Attempt 3: Fallback via Covers API image validation
-    if (cover.includes("No+Cover")) {
-      cover = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
-    }
-
-    // Final Validation and Insertion
     const finalTitle = title || `Unknown Book (${isbn})`;
     const finalAuthor = author || "Unknown Author";
 
@@ -157,30 +123,46 @@ async function fetchBookDetails(isbn) {
     saveAndRender();
     
     if (!title) {
-      statusDiv.innerText = `Saved ISBN ${isbn}, but details were sparse on Open Library.`;
+      statusDiv.innerText = `Added ISBN ${isbn} as Unknown. Click 'Edit' on the book card to rename it!`;
     } else {
       statusDiv.innerText = `Successfully added "${finalTitle}"!`;
     }
 
   } catch (err) {
     console.error(err);
-    // Fallback save so user doesn't lose the scan on network exceptions
     library.push({
       id: Date.now(),
       isbn: isbn,
       title: `Unknown Book (${isbn})`,
       author: "Unknown Author",
-      cover: `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
+      cover: cover,
       addedAt: new Date().getTime()
     });
     saveAndRender();
-    statusDiv.innerText = "Error fetching book data. Entry saved with fallback settings.";
+    statusDiv.innerText = "Error fetching from Google Books. Saved as unknown (use Edit to update).";
   } finally {
     setTimeout(() => {
       isProcessing = false;
       statusDiv.innerText = "Ready to scan or enter next book...";
     }, 2000);
   }
+}
+
+// Edit Book Details Functionality
+function editBook(id) {
+  const book = library.find(b => b.id === id);
+  if (!book) return;
+
+  const newTitle = prompt("Enter correct book title:", book.title);
+  if (newTitle === null) return; // Cancelled
+
+  const newAuthor = prompt("Enter correct author name:", book.author);
+  if (newAuthor === null) return; // Cancelled
+
+  book.title = newTitle.trim() || book.title;
+  book.author = newAuthor.trim() || book.author;
+  saveAndRender();
+  statusDiv.innerText = `Updated details for "${book.title}"!`;
 }
 
 // CSV Export Logic
@@ -319,7 +301,10 @@ function renderLibrary() {
         <div class="book-author">${book.author}</div>
         <div class="isbn-tag">ISBN: ${book.isbn}</div>
       </div>
-      <button class="delete-btn" onclick="deleteBook(${book.id})">Remove</button>
+      <div class="card-actions" style="display: flex; gap: 5px; width: 100%; margin-top: auto;">
+        <button class="edit-btn" onclick="editBook(${book.id})" style="flex: 1; background-color: #f39c12; font-size: 11px; padding: 6px;">Edit</button>
+        <button class="delete-btn" onclick="deleteBook(${book.id})" style="flex: 1; margin-top: 0; font-size: 11px; padding: 6px;">Remove</button>
+      </div>
     `;
 
     libraryContainer.appendChild(card);
