@@ -86,24 +86,40 @@ manualForm.addEventListener('submit', (e) => {
   }
 });
 
-// Fetch Book Metadata using Google Books API
+// Fetch Book Metadata: Prioritizing Google Books with Open Library Fallback
 async function fetchBookDetails(isbn) {
   let title = null;
   let author = null;
-  let cover = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`; // Fallback cover source
+  let cover = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`; // Default cover fallback
 
   try {
-    const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
-    const data = await response.json();
+    // --- ATTEMPT 1: Google Books API (Primary Priority) ---
+    const googleRes = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
+    const googleData = await googleRes.json();
 
-    if (data.items && data.items.length > 0) {
-      const volumeInfo = data.items[0].volumeInfo;
+    if (googleData.items && googleData.items.length > 0) {
+      const volumeInfo = googleData.items[0].volumeInfo;
       title = volumeInfo.title || null;
       author = volumeInfo.authors ? volumeInfo.authors.join(", ") : null;
       
       if (volumeInfo.imageLinks && volumeInfo.imageLinks.thumbnail) {
-        // Upgrade Google thumbnail to secure HTTPS and remove curl borders if present
         cover = volumeInfo.imageLinks.thumbnail.replace('http://', 'https://').replace('&edge=curl', '');
+      }
+    }
+
+    // --- ATTEMPT 2: Open Library API (Fallback if Google fails) ---
+    if (!title) {
+      const olRes = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
+      const olData = await olRes.json();
+      const bookKey = `ISBN:${isbn}`;
+
+      if (olData[bookKey]) {
+        const bookData = olData[bookKey];
+        title = bookData.title || null;
+        author = bookData.authors ? bookData.authors.map(a => a.name).join(", ") : null;
+        if (bookData.cover && bookData.cover.medium) {
+          cover = bookData.cover.medium;
+        }
       }
     }
 
@@ -139,7 +155,7 @@ async function fetchBookDetails(isbn) {
       addedAt: new Date().getTime()
     });
     saveAndRender();
-    statusDiv.innerText = "Error fetching from Google Books. Saved as unknown (use Edit to update).";
+    statusDiv.innerText = "Error fetching book data. Saved as unknown (use Edit to update).";
   } finally {
     setTimeout(() => {
       isProcessing = false;
